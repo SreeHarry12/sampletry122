@@ -57,7 +57,7 @@ namespace Rocket.Multiplayer
 
             string activeSceneName = SceneManager.GetActiveScene().name;
             offlineScene = activeSceneName;
-            onlineScene = ArenaSceneName;
+            onlineScene = activeSceneName;
             RoomScene = activeSceneName;
             GameplayScene = ArenaSceneName;
             dontDestroyOnLoad = true;
@@ -149,7 +149,7 @@ namespace Rocket.Multiplayer
                 return;
             }
 
-            ServerChangeScene(onlineScene);
+            ServerChangeScene(GameplayScene);
         }
 
         public List<RocketRoomPlayer> GetLobbyPlayers()
