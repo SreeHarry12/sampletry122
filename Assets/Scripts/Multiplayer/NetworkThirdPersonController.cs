@@ -1,5 +1,6 @@
 using Mirror;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Rocket.Multiplayer
 {
@@ -26,6 +27,15 @@ namespace Rocket.Multiplayer
         [SerializeField] private float minPitch = -35f;
         [SerializeField] private float maxPitch = 70f;
         [SerializeField] private bool lockCursorOnDesktop = true;
+        [SerializeField] private Vector3 cameraPivotOffset = new Vector3(0f, 1.6f, 0f);
+        [SerializeField] private float cameraDistance = 4.5f;
+        [SerializeField] private float cameraPositionSmoothness = 14f;
+
+        [SyncVar(hook = nameof(OnPlayerNameChanged))]
+        private string playerName = "Player";
+
+        [SyncVar]
+        private int playerNumber;
 
         private CharacterController characterController;
         private Vector2 serverMoveInput;
@@ -34,6 +44,9 @@ namespace Rocket.Multiplayer
         private float verticalVelocity;
         private float localYaw;
         private float localPitch;
+        private Transform runtimeCameraPivot;
+        private Vector3 currentCameraVelocity;
+        private Text worldNameText;
 
         public override void OnStartAuthority()
         {
@@ -68,6 +81,8 @@ namespace Rocket.Multiplayer
             {
                 audioListener = playerCamera.GetComponent<AudioListener>();
             }
+
+            EnsureWorldNameLabel();
         }
 
         private void Update()
@@ -83,8 +98,19 @@ namespace Rocket.Multiplayer
             }
         }
 
+        private void LateUpdate()
+        {
+            if (!isOwned || playerCamera == null)
+            {
+                return;
+            }
+
+            UpdateCameraFollow(Time.deltaTime);
+        }
+
         private void InitializeLocalPlayer()
         {
+            EnsureRuntimeReferences();
             SetLocalOnlyObjectsActive(true);
 
             if (playerInput != null)
@@ -122,6 +148,43 @@ namespace Rocket.Multiplayer
             if (cameraPivot != null)
             {
                 cameraPivot.gameObject.SetActive(isActive);
+            }
+        }
+
+        private void EnsureRuntimeReferences()
+        {
+            if (playerInput == null)
+            {
+                playerInput = GetComponent<SharedPlayerInput>();
+            }
+
+            if (mobileInputUI == null)
+            {
+                mobileInputUI = FindFirstObjectByType<MobileInputUI>(FindObjectsInactive.Include);
+            }
+
+            if (cameraPivot == null)
+            {
+                GameObject pivotObject = new GameObject("CameraPivot");
+                runtimeCameraPivot = pivotObject.transform;
+                runtimeCameraPivot.SetParent(transform, false);
+                runtimeCameraPivot.localPosition = cameraPivotOffset;
+                cameraPivot = runtimeCameraPivot;
+            }
+
+            if (playerCamera == null)
+            {
+                playerCamera = Camera.main;
+
+                if (playerCamera == null)
+                {
+                    playerCamera = FindFirstObjectByType<Camera>();
+                }
+            }
+
+            if (audioListener == null && playerCamera != null)
+            {
+                audioListener = playerCamera.GetComponent<AudioListener>();
             }
         }
 
@@ -190,6 +253,79 @@ namespace Rocket.Multiplayer
             velocity.y = verticalVelocity;
 
             characterController.Move(velocity * deltaTime);
+        }
+
+        private void UpdateCameraFollow(float deltaTime)
+        {
+            if (cameraPivot == null)
+            {
+                return;
+            }
+
+            Quaternion yawRotation = Quaternion.Euler(0f, localYaw, 0f);
+            Quaternion pitchRotation = Quaternion.Euler(localPitch, localYaw, 0f);
+            Vector3 desiredPosition = cameraPivot.position - (pitchRotation * Vector3.forward * cameraDistance);
+
+            playerCamera.transform.position = Vector3.SmoothDamp(
+                playerCamera.transform.position,
+                desiredPosition,
+                ref currentCameraVelocity,
+                1f / Mathf.Max(cameraPositionSmoothness, 0.01f),
+                Mathf.Infinity,
+                deltaTime);
+
+            playerCamera.transform.rotation = Quaternion.LookRotation(cameraPivot.position - playerCamera.transform.position, Vector3.up);
+        }
+
+        [Server]
+        public void ServerSetPlayerName(string syncedName, int syncedNumber)
+        {
+            playerName = syncedName;
+            playerNumber = syncedNumber;
+        }
+
+        private void OnPlayerNameChanged(string oldValue, string newValue)
+        {
+            EnsureWorldNameLabel();
+
+            if (worldNameText != null)
+            {
+                worldNameText.text = $"{playerNumber:00} {newValue}";
+            }
+        }
+
+        private void EnsureWorldNameLabel()
+        {
+            if (worldNameText != null)
+            {
+                return;
+            }
+
+            Transform labelRoot = new GameObject("WorldNameLabel").transform;
+            labelRoot.SetParent(transform, false);
+            labelRoot.localPosition = new Vector3(0f, 2.4f, 0f);
+
+            Canvas canvas = labelRoot.gameObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.worldCamera = Camera.main;
+            RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+            canvasRect.sizeDelta = new Vector2(240f, 48f);
+            canvas.scaleFactor = 10f;
+
+            GameObject textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+            RectTransform textRect = textObject.GetComponent<RectTransform>();
+            textRect.SetParent(labelRoot, false);
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+
+            worldNameText = textObject.GetComponent<Text>();
+            worldNameText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            worldNameText.alignment = TextAnchor.MiddleCenter;
+            worldNameText.color = Color.white;
+            worldNameText.text = playerName;
+            worldNameText.raycastTarget = false;
         }
     }
 }
