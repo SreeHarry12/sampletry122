@@ -163,4 +163,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d8281ff25ac4682843c32de294dd6d09, type: 3}
   m_Name:
   m_EditorClassIdentifier:
-  joystickPrefab: {fileID: 100100000, guid: e0815e227ed46e445b99930271e8942c, type: 3}
+  joystickPrefab: {fileID: 1531213445540486, guid: e0815e227ed46e445b99930271e8942c, type: 2}

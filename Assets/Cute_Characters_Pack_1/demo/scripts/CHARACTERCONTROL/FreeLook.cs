@@ -51,7 +51,7 @@ namespace My.DemoScene
 
         void LateUpdate()
         {
-            if (!isControlEnabled) return;
+            if (!isControlEnabled || target == null) return;
             HandleMouseLook();
             HandleZoom();
         }

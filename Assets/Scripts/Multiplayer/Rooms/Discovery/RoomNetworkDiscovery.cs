@@ -3,6 +3,7 @@ using System.Net;
 using Mirror;
 using Mirror.Discovery;
 using Rocket.Multiplayer.Core;
+using UnityEngine;
 
 namespace Rocket.Multiplayer.Rooms.Discovery
 {
@@ -50,23 +51,40 @@ namespace Rocket.Multiplayer.Rooms.Discovery
         // try/catch around this discovery loop safely drops the request instead of crashing it.
         protected override RoomDiscoveryResponse ProcessRequest(RoomDiscoveryRequest request, IPEndPoint endpoint)
         {
-            CustomNetworkManager manager = CustomNetworkManager.Instance;
+            Debug.Log($"[RoomDiscovery][Host] Request received from {endpoint} (mode={request.Mode}, key={request.Key})");
 
-            return new RoomDiscoveryResponse
+            try
             {
-                RoomId = manager.CurrentRoomId,
-                RoomKey = manager.CurrentRoomKey,
-                RoomName = manager.CurrentRoomName,
-                Visibility = manager.CurrentVisibility,
-                CurrentPlayers = manager.roomSlots.Count,
-                MaxPlayers = manager.maxConnections,
-                Status = manager.CurrentStatus,
-                HostUri = transport.ServerUri()
-            };
+                CustomNetworkManager manager = CustomNetworkManager.Instance;
+
+                RoomDiscoveryResponse response = new RoomDiscoveryResponse
+                {
+                    RoomId = manager.CurrentRoomId,
+                    RoomKey = manager.CurrentRoomKey,
+                    RoomName = manager.CurrentRoomName,
+                    Visibility = manager.CurrentVisibility,
+                    CurrentPlayers = manager.roomSlots.Count,
+                    MaxPlayers = manager.maxConnections,
+                    Status = manager.CurrentStatus,
+                    HostUri = transport.ServerUri()
+                };
+
+                Debug.Log($"[RoomDiscovery][Host] Replying with room '{response.RoomName}' key={response.RoomKey} uri={response.HostUri}");
+                return response;
+            }
+            catch (Exception ex)
+            {
+                // NetworkDiscoveryBase silently swallows exceptions thrown here (no reply is sent),
+                // which is otherwise indistinguishable from the packet never arriving at all.
+                Debug.LogError($"[RoomDiscovery][Host] ProcessRequest threw, no reply will be sent: {ex}");
+                throw;
+            }
         }
 
         protected override void ProcessResponse(RoomDiscoveryResponse response, IPEndPoint endpoint)
         {
+            Debug.Log($"[RoomDiscovery][Client] Response received from {endpoint}: room='{response.RoomName}' key={response.RoomKey} uri={response.HostUri}");
+
             response.EndPoint = endpoint;
 
             // The self-reported host URI may carry an unresolvable hostname; we know the real

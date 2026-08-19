@@ -83,7 +83,14 @@ namespace Rocket.Multiplayer.Arena
             }
 
             if (cam.GetComponent<ThirdPersonCamera>() == null)
-                cam.gameObject.AddComponent<ThirdPersonCamera>();
+            {
+                // Starts disabled: ThirdPersonCamera.LateUpdate() runs every frame from the moment
+                // it exists, but its target isn't assigned until the local player object spawns and
+                // NetworkPlayerController.WireLocalCamera() runs (a few frames later over network) -
+                // without this it NREs on target.position in the meantime.
+                ThirdPersonCamera rig = cam.gameObject.AddComponent<ThirdPersonCamera>();
+                rig.isControlEnabled = false;
+            }
         }
 
         void EnsureMobileCanvas()

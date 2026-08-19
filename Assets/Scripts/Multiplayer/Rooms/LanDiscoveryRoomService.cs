@@ -86,6 +86,8 @@ namespace Rocket.Multiplayer.Rooms
             discovery.ConfigureListenPort(config.DiscoveryBroadcastPort);
             discovery.StartDiscovery();
 
+            Debug.Log($"[RoomDiscovery][Client] StartSearch mode={mode} key={key} port={config.DiscoveryBroadcastPort} timeout={timeoutSeconds}s");
+
             searchRoutine = coroutineHost.StartCoroutine(SearchTimeoutRoutine(timeoutSeconds));
         }
 
@@ -94,6 +96,8 @@ namespace Rocket.Multiplayer.Rooms
             yield return new WaitForSeconds(timeoutSeconds);
             discovery.StopDiscovery();
             searchRoutine = null;
+
+            Debug.Log($"[RoomDiscovery][Client] Search window ended, collectedRooms={collectedRooms.Count}");
 
             if (collectedRooms.Count == 0)
                 SearchTimedOut?.Invoke();
@@ -113,6 +117,8 @@ namespace Rocket.Multiplayer.Rooms
 
         void OnResponseReceived(RoomDiscoveryResponse response)
         {
+            Debug.Log($"[RoomDiscovery][Client] OnResponseReceived key={response.RoomKey} searchingForKey={searchingForKey} searchingKey={searchingKey}");
+
             if (response.HostUri == null || string.IsNullOrEmpty(response.RoomKey))
                 return;
 
