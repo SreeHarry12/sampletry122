@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e711ec2bf39df1b4b9f39f45ea50d595
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 364316
+  packageName: "Cute Modular Character Pack \u2013 Low Poly Animated"
+  packageVersion: 1.0
+  assetPath: Assets/Cute_Characters_Pack_1/demo/controller/MainCam.controller
+  uploadId: 873936
