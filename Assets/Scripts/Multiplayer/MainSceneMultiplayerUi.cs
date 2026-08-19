@@ -1,6 +1,8 @@
 using Mirror;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Rocket.Multiplayer
 {
@@ -13,7 +15,6 @@ namespace Rocket.Multiplayer
         private InputField roomNameInput;
         private InputField addressInput;
         private InputField portInput;
-        private Button hostLanButton;
         private Button hostInternetButton;
         private Button joinInternetButton;
         private Button leaveButton;
@@ -30,7 +31,6 @@ namespace Rocket.Multiplayer
             addressInput = FindInput("AddressInput");
             portInput = FindInput("PortInput");
 
-            hostLanButton = FindButton("HostLanButton");
             hostInternetButton = FindButton("HostInternetButton");
             joinInternetButton = FindButton("JoinInternetButton");
             leaveButton = FindButton("LeaveButton");
@@ -67,7 +67,7 @@ namespace Rocket.Multiplayer
             if (addressInput != null)
             {
                 addressInput.text = string.IsNullOrWhiteSpace(MultiplayerLocalSettings.AdvertisedAddress)
-                    ? "127.0.0.1"
+                    ? string.Empty
                     : MultiplayerLocalSettings.AdvertisedAddress;
             }
 
@@ -76,7 +76,6 @@ namespace Rocket.Multiplayer
                 portInput.text = DefaultPort.ToString();
             }
 
-            RegisterButton(hostLanButton, HostLanGame);
             RegisterButton(hostInternetButton, HostInternetGame);
             RegisterButton(joinInternetButton, JoinInternetGame);
             RegisterButton(leaveButton, LeaveGame);
@@ -98,24 +97,6 @@ namespace Rocket.Multiplayer
             roomManager.LobbyStateChanged -= RefreshView;
         }
 
-        private void HostLanGame()
-        {
-            if (roomManager == null)
-            {
-                SetStatus("Room manager not found.");
-                return;
-            }
-
-            if (!TryBuildConfiguration(NetworkRoomMode.Lan, RoomVisibility.Public, out HostedRoomConfiguration configuration))
-            {
-                return;
-            }
-
-            MultiplayerLocalSettings.AdvertisedAddress = string.Empty;
-            roomManager.HostRoom(configuration);
-            RefreshView();
-        }
-
         private void HostInternetGame()
         {
             if (roomManager == null)
@@ -124,13 +105,29 @@ namespace Rocket.Multiplayer
                 return;
             }
 
+            if (addressInput == null || string.IsNullOrWhiteSpace(addressInput.text))
+            {
+                SetStatus("Enter the public IPv4 address clients should use.");
+                return;
+            }
+
+            string advertisedAddress = addressInput.text.Trim();
+            if (!IPAddress.TryParse(advertisedAddress, out IPAddress parsedAddress) ||
+                parsedAddress.AddressFamily != AddressFamily.InterNetwork ||
+                IPAddress.IsLoopback(parsedAddress))
+            {
+                SetStatus("Enter a public IPv4 address. Internet play does not use localhost or LAN IPs here.");
+                return;
+            }
+
             if (!TryBuildConfiguration(NetworkRoomMode.Online, RoomVisibility.Private, out HostedRoomConfiguration configuration))
             {
                 return;
             }
 
-            MultiplayerLocalSettings.AdvertisedAddress = addressInput != null ? addressInput.text.Trim() : string.Empty;
+            MultiplayerLocalSettings.AdvertisedAddress = advertisedAddress;
             roomManager.HostRoom(configuration);
+            SetStatus($"Hosting internet game. Clients must join {MultiplayerLocalSettings.AdvertisedAddress}:{configuration.Port}");
             RefreshView();
         }
 
@@ -150,13 +147,21 @@ namespace Rocket.Multiplayer
                 return;
             }
 
+            string joinAddress = addressInput.text.Trim();
+            if (IPAddress.TryParse(joinAddress, out IPAddress parsedAddress) && IPAddress.IsLoopback(parsedAddress))
+            {
+                SetStatus("127.0.0.1 only works when host and client run on the same PC.");
+                return;
+            }
+
             if (!TryGetPort(out ushort port))
             {
                 SetStatus("Port must be a valid number.");
                 return;
             }
 
-            roomManager.JoinByAddress(addressInput.text.Trim(), port, NetworkRoomMode.Online);
+            roomManager.JoinByAddress(joinAddress, port, NetworkRoomMode.Online);
+            SetStatus($"Trying to join {joinAddress}:{port}");
             RefreshView();
         }
 
@@ -229,7 +234,6 @@ namespace Rocket.Multiplayer
         {
             if (roomManager == null)
             {
-                SetButtonActive(hostLanButton, false);
                 SetButtonActive(hostInternetButton, false);
                 SetButtonActive(joinInternetButton, false);
                 SetButtonActive(leaveButton, false);
@@ -241,7 +245,6 @@ namespace Rocket.Multiplayer
             bool isHost = NetworkServer.active;
             bool canEnterArena = NetworkServer.active && NetworkClient.isConnected;
 
-            SetButtonActive(hostLanButton, !isConnected);
             SetButtonActive(hostInternetButton, !isConnected);
             SetButtonActive(joinInternetButton, !isConnected);
             SetButtonActive(leaveButton, isConnected);
@@ -254,7 +257,10 @@ namespace Rocket.Multiplayer
 
             if (isHost && !string.IsNullOrWhiteSpace(roomManager.CurrentRoomKey))
             {
-                roomKeyText.text = $"Room Key: {roomManager.CurrentRoomKey}";
+                string address = !string.IsNullOrWhiteSpace(MultiplayerLocalSettings.AdvertisedAddress)
+                    ? MultiplayerLocalSettings.AdvertisedAddress
+                    : LocalNetworkUtility.GetLanAddress();
+                roomKeyText.text = $"Join Address: {address}:{portInput?.text}\nRoom Key: {roomManager.CurrentRoomKey}";
             }
             else
             {
