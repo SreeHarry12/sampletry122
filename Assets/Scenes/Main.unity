@@ -2222,7 +2222,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: Public IPv4 address
+  m_Text: Room key or host address
 --- !u!1 &2200000520
 GameObject:
   m_ObjectHideFlags: 0
@@ -3842,7 +3842,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: Internet only: host enters public IPv4, forwards TCP 7777, client joins with the same public IPv4.
+  m_Text: Paste room key or host IPv4 here. Host can leave it empty and use Host Internet to auto-detect public IPv4. Port forwarding on TCP 7777 is still required.
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
