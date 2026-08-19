@@ -74,8 +74,15 @@ namespace My.DemoScene
                 }
             }
 
-            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime * inputWeight;
-            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime * inputWeight;
+            // SimpleInput first (lets a touch-drag AxisInputMoveGesture on mobile drive look),
+            // falling back to the real mouse - same precedence Control.cs already uses for movement.
+            float rawX = SimpleInput.GetAxis("Mouse X");
+            float rawY = SimpleInput.GetAxis("Mouse Y");
+            if (Mathf.Abs(rawX) < 0.0001f) rawX = Input.GetAxis("Mouse X");
+            if (Mathf.Abs(rawY) < 0.0001f) rawY = Input.GetAxis("Mouse Y");
+
+            float mouseX = rawX * mouseSensitivity * Time.deltaTime * inputWeight;
+            float mouseY = rawY * mouseSensitivity * Time.deltaTime * inputWeight;
 
             yRotation += mouseX;
             xRotation -= mouseY;

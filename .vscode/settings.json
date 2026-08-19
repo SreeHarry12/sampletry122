@@ -67,5 +67,6 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "sampletry122.slnx"
+    "dotnet.defaultSolution": "sampletry122.slnx",
+    "claudeCode.useTerminal": true
 }
