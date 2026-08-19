@@ -1,5 +1,7 @@
 using Mirror;
+using System.Collections;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 using System.Net;
 using System.Net.Sockets;
@@ -9,6 +11,11 @@ namespace Rocket.Multiplayer
     public class MainSceneMultiplayerUi : MonoBehaviour
     {
         private const ushort DefaultPort = 7777;
+        private static readonly string[] PublicIpLookupUrls =
+        {
+            "https://api.ipify.org",
+            "https://checkip.amazonaws.com"
+        };
 
         private RocketNetworkRoomManager roomManager;
         private InputField playerNameInput;
@@ -21,6 +28,7 @@ namespace Rocket.Multiplayer
         private Button enterArenaButton;
         private Text statusText;
         private Text roomKeyText;
+        private bool isResolvingHostAddress;
 
         private void Awake()
         {
@@ -105,30 +113,24 @@ namespace Rocket.Multiplayer
                 return;
             }
 
-            if (addressInput == null || string.IsNullOrWhiteSpace(addressInput.text))
-            {
-                SetStatus("Enter the public IPv4 address clients should use.");
-                return;
-            }
-
-            string advertisedAddress = addressInput.text.Trim();
-            if (!IPAddress.TryParse(advertisedAddress, out IPAddress parsedAddress) ||
-                parsedAddress.AddressFamily != AddressFamily.InterNetwork ||
-                IPAddress.IsLoopback(parsedAddress))
-            {
-                SetStatus("Enter a public IPv4 address. Internet play does not use localhost or LAN IPs here.");
-                return;
-            }
-
             if (!TryBuildConfiguration(NetworkRoomMode.Online, RoomVisibility.Private, out HostedRoomConfiguration configuration))
             {
                 return;
             }
 
-            MultiplayerLocalSettings.AdvertisedAddress = advertisedAddress;
-            roomManager.HostRoom(configuration);
-            SetStatus($"Hosting internet game. Clients must join {MultiplayerLocalSettings.AdvertisedAddress}:{configuration.Port}");
-            RefreshView();
+            if (TryGetPublicIpv4FromInput(out string advertisedAddress))
+            {
+                BeginHosting(configuration, advertisedAddress);
+                return;
+            }
+
+            if (isResolvingHostAddress)
+            {
+                SetStatus("Still resolving the host address...");
+                return;
+            }
+
+            StartCoroutine(ResolvePublicIpv4AndHost(configuration));
         }
 
         private void JoinInternetGame()
@@ -143,20 +145,28 @@ namespace Rocket.Multiplayer
 
             if (addressInput == null || string.IsNullOrWhiteSpace(addressInput.text))
             {
-                SetStatus("Enter the host address.");
+                SetStatus("Enter the room key or host address.");
                 return;
             }
 
-            string joinAddress = addressInput.text.Trim();
+            string joinTarget = addressInput.text.Trim();
+            if (RoomKeyCodec.TryDecode(joinTarget, out _, out _, out _))
+            {
+                roomManager.JoinByRoomKey(joinTarget, NetworkRoomMode.Online);
+                SetStatus("Trying to join by room key...");
+                RefreshView();
+                return;
+            }
+
+            if (!TryParseJoinAddress(joinTarget, out string joinAddress, out ushort port))
+            {
+                SetStatus("Enter a valid room key, IPv4 address, or IPv4:port.");
+                return;
+            }
+
             if (IPAddress.TryParse(joinAddress, out IPAddress parsedAddress) && IPAddress.IsLoopback(parsedAddress))
             {
                 SetStatus("127.0.0.1 only works when host and client run on the same PC.");
-                return;
-            }
-
-            if (!TryGetPort(out ushort port))
-            {
-                SetStatus("Port must be a valid number.");
                 return;
             }
 
@@ -221,6 +231,122 @@ namespace Rocket.Multiplayer
             return portInput != null && ushort.TryParse(portInput.text, out port);
         }
 
+        private void BeginHosting(HostedRoomConfiguration configuration, string advertisedAddress)
+        {
+            MultiplayerLocalSettings.AdvertisedAddress = advertisedAddress;
+            if (addressInput != null)
+            {
+                addressInput.text = advertisedAddress;
+            }
+
+            roomManager.HostRoom(configuration);
+            SetStatus($"Hosting internet game. Share room key or {advertisedAddress}:{configuration.Port}");
+            RefreshView();
+        }
+
+        private bool TryGetPublicIpv4FromInput(out string address)
+        {
+            address = string.Empty;
+            if (addressInput == null || string.IsNullOrWhiteSpace(addressInput.text))
+            {
+                return false;
+            }
+
+            string candidate = addressInput.text.Trim();
+            if (!IPAddress.TryParse(candidate, out IPAddress parsedAddress) ||
+                parsedAddress.AddressFamily != AddressFamily.InterNetwork ||
+                IPAddress.IsLoopback(parsedAddress))
+            {
+                return false;
+            }
+
+            address = candidate;
+            return true;
+        }
+
+        private bool TryParseJoinAddress(string joinTarget, out string address, out ushort port)
+        {
+            address = string.Empty;
+            port = DefaultPort;
+
+            string candidate = joinTarget.Trim();
+            if (candidate.Length == 0)
+            {
+                return false;
+            }
+
+            int separatorIndex = candidate.LastIndexOf(':');
+            if (separatorIndex > 0 && separatorIndex < candidate.Length - 1)
+            {
+                string portText = candidate.Substring(separatorIndex + 1).Trim();
+                if (!ushort.TryParse(portText, out port))
+                {
+                    return false;
+                }
+
+                candidate = candidate.Substring(0, separatorIndex).Trim();
+            }
+            else if (!TryGetPort(out port))
+            {
+                return false;
+            }
+
+            if (!IPAddress.TryParse(candidate, out IPAddress parsedAddress) ||
+                parsedAddress.AddressFamily != AddressFamily.InterNetwork)
+            {
+                return false;
+            }
+
+            address = candidate;
+            return true;
+        }
+
+        private IEnumerator ResolvePublicIpv4AndHost(HostedRoomConfiguration configuration)
+        {
+            isResolvingHostAddress = true;
+            SetStatus("Resolving public IPv4 automatically...");
+            RefreshView();
+
+            string resolvedAddress = string.Empty;
+            for (int i = 0; i < PublicIpLookupUrls.Length; i++)
+            {
+                using (UnityWebRequest request = UnityWebRequest.Get(PublicIpLookupUrls[i]))
+                {
+                    request.timeout = 8;
+                    yield return request.SendWebRequest();
+
+#if UNITY_2020_3_OR_NEWER
+                    bool failed = request.result != UnityWebRequest.Result.Success;
+#else
+                    bool failed = request.isNetworkError || request.isHttpError;
+#endif
+                    if (failed)
+                    {
+                        continue;
+                    }
+
+                    string responseText = request.downloadHandler.text.Trim();
+                    if (IPAddress.TryParse(responseText, out IPAddress parsedAddress) &&
+                        parsedAddress.AddressFamily == AddressFamily.InterNetwork &&
+                        !IPAddress.IsLoopback(parsedAddress))
+                    {
+                        resolvedAddress = responseText;
+                        break;
+                    }
+                }
+            }
+
+            isResolvingHostAddress = false;
+            if (string.IsNullOrWhiteSpace(resolvedAddress))
+            {
+                SetStatus("Couldn't detect a public IPv4 automatically. Enter it manually or use a relay service.");
+                RefreshView();
+                yield break;
+            }
+
+            BeginHosting(configuration, resolvedAddress);
+        }
+
         private void SavePlayerName()
         {
             if (playerNameInput != null)
@@ -245,8 +371,8 @@ namespace Rocket.Multiplayer
             bool isHost = NetworkServer.active;
             bool canEnterArena = NetworkServer.active && NetworkClient.isConnected;
 
-            SetButtonActive(hostInternetButton, !isConnected);
-            SetButtonActive(joinInternetButton, !isConnected);
+            SetButtonActive(hostInternetButton, !isConnected && !isResolvingHostAddress);
+            SetButtonActive(joinInternetButton, !isConnected && !isResolvingHostAddress);
             SetButtonActive(leaveButton, isConnected);
             SetButtonActive(enterArenaButton, canEnterArena);
 
@@ -260,7 +386,7 @@ namespace Rocket.Multiplayer
                 string address = !string.IsNullOrWhiteSpace(MultiplayerLocalSettings.AdvertisedAddress)
                     ? MultiplayerLocalSettings.AdvertisedAddress
                     : LocalNetworkUtility.GetLanAddress();
-                roomKeyText.text = $"Join Address: {address}:{portInput?.text}\nRoom Key: {roomManager.CurrentRoomKey}";
+                roomKeyText.text = $"Share Room Key: {roomManager.CurrentRoomKey}\nDirect Address: {address}:{portInput?.text}";
             }
             else
             {
